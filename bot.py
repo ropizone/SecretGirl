@@ -243,7 +243,7 @@ async def get_ai_reply(chat_id, user_message, extra="", is_group=False,
 
     try:
         resp = await client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "system", "content": get_system_prompt(
                 chat_id, extra, lang=lang, is_bf_chat=is_bf_chat
             )}] + conversations[chat_id],
@@ -268,7 +268,7 @@ async def get_ai_reply(chat_id, user_message, extra="", is_group=False,
 async def get_ai_idle_message(chat_id):
     try:
         resp = await client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="openai/gpt-oss-20b",
             messages=[
                 {"role": "system", "content": get_system_prompt(chat_id)},
                 {"role": "user", "content": "The chat has been silent for a while. Start a new topic or ask something interesting — 1 line only, in English."}
@@ -642,7 +642,7 @@ async def cmd_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
         roast_prompt = f"{target_name} has gotten {count} warnings. Give them a savage funny roast — 2 lines max in English."
         try:
             resp = await client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": get_system_prompt(chat_id)},
                     {"role": "user", "content": roast_prompt}
@@ -775,7 +775,7 @@ async def welcome_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if new_user.is_bot: return
             name = new_user.first_name or "New friend"
             resp = await client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="openai/gpt-oss-20b",
                 messages=[
                     {"role": "system", "content": get_system_prompt(result.chat.id)},
                     {"role": "user", "content": f"{name} just joined the group. Give a warm, slightly flirty welcome — 1 line in English."}
@@ -918,7 +918,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if str(sender_id) not in nicknames and random.random() < 0.05:
             try:
                 nr = await client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="openai/gpt-oss-20b",
                     messages=[
                         {"role": "system", "content": "You're a fun Indian girl. Based on this message, give one funny Indian nickname like 'Professor', 'Kumbhkaran', 'Drama Queen'. Only the nickname, nothing else."},
                         {"role": "user", "content": text[:100]}
