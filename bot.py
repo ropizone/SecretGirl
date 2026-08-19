@@ -22,12 +22,10 @@ client = AsyncGroq(api_key=API_KEY)
 # ─── Model Fallback Chain ─────────────────────────────────
 # If one model fails (404/503), automatically tries the next one
 GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "llama4-17b-scout",
-    "qwen/qwen3.6-27b",
     "openai/gpt-oss-20b",
     "openai/gpt-oss-120b",
+    "llama4-17b-scout",
+    "llama-3.3-70b-versatile",
 ]
 
 async def groq_chat(messages, max_tokens=80, temperature=0.9):
@@ -41,7 +39,11 @@ async def groq_chat(messages, max_tokens=80, temperature=0.9):
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            return resp.choices[0].message.content.strip()
+            raw = resp.choices[0].message.content
+            # Strip <think>...</think> tags (Qwen reasoning models)
+            import re
+            raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+            return raw
         except Exception as e:
             err_str = str(e).lower()
             if any(x in err_str for x in [
