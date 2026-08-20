@@ -26,10 +26,9 @@ client = AsyncGroq(api_key=API_KEY)
 
 # ─── Model Fallback Chain ─────────────────────────────────
 GROQ_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama4-maverick-17b-128e-instruct",
-    "llama4-scout-17b-16e-instruct",
-    "gemma2-9b-it",
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.6-27b",
 ]
 
 async def groq_chat(messages, max_tokens=80, temperature=0.9):
