@@ -35,14 +35,19 @@ async def groq_chat(messages, max_tokens=80, temperature=0.9):
     last_error = None
     for model in GROQ_MODELS:
         try:
+            extra_kwargs = {}
+            if model == "qwen/qwen3.6-27b":
+                extra_kwargs["reasoning_effort"] = "none"  # disable <think> blocks
             resp = await client.chat.completions.create(
                 model=model,
                 messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
+                **extra_kwargs,
             )
             raw = resp.choices[0].message.content or ""
-            raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+            raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
+            raw = re.sub(r'<think>.*', '', raw, flags=re.DOTALL).strip()  # incomplete <think> blocks
             if raw:
                 return raw
             # Empty response — try next model
