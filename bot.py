@@ -45,7 +45,7 @@ async def groq_chat(messages, max_tokens=80, temperature=0.9):
     for model in GROQ_MODELS:
         extra_kwargs = {}
         if model == "qwen/qwen3.6-27b":
-            extra_kwargs["reasoning_effort"] = "none"
+            extra_kwargs["extra_body"] = {"reasoning_effort": "none"}
 
         # Try each model up to 3 times (for rate limits / transient errors)
         for attempt in range(3):
