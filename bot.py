@@ -46,13 +46,23 @@ async def groq_chat(messages, max_tokens=80, temperature=0.9):
             raw = re.sub(r'<think>.*?</think>', '', raw, flags=re.DOTALL).strip()
             if raw:
                 return raw
+            # Empty response — try next model
+            last_error = Exception("Empty response")
+            continue
         except Exception as e:
             err = str(e).lower()
-            if any(x in err for x in ["model_not_found","404","not found","deprecated","does not exist"]):
-                print(f"[Fallback] {model!r} unavailable → next ({e})")
+            if any(x in err for x in [
+                "model_not_found", "404", "not found", "deprecated",
+                "does not exist", "model not found", "invalid model",
+                "503", "502", "overloaded"
+            ]):
+                print(f"[Fallback] {model!r} → next ({type(e).__name__})")
                 last_error = e
                 continue
-            raise e
+            # Auth/rate limit — still try next model instead of crashing
+            print(f"[Fallback] {model!r} error → next ({e})")
+            last_error = e
+            continue
     raise Exception(f"All models failed. Last: {last_error}")
 
 # ─── Files ────────────────────────────────────────────────
@@ -192,7 +202,7 @@ async def is_admin(context, chat_id, user_id):
         return False
 
 # ─── System Prompt ────────────────────────────────────────
-def get_system_prompt(chat_id=0, extra="", lang="english", is_bf_chat=False):
+def get_system_prompt(chat_id=0, extra="", lang="hinglish", is_bf_chat=False):
     hour = datetime.datetime.now().hour
     if   5  <= hour < 12: mood = "Morning — energetic, fresh, lil sleepy-cute."
     elif 12 <= hour < 17: mood = "Afternoon — chill, fun, casual vibes."
@@ -207,12 +217,12 @@ def get_system_prompt(chat_id=0, extra="", lang="english", is_bf_chat=False):
     mem = get_memory_context(chat_id) if chat_id else ""
 
     lang_map = {
-        "tamil":    "Reply in Tamil or romanised Tamil (tamizh). Real, warm, natural.",
-        "hindi":    "Reply in Hindi (Devanagari or romanised). Warm and real.",
-        "hinglish": "Reply in Hinglish — Hindi+English mix. Very real Indian girl vibe. Can say 'bc', 'yaar' etc.",
-        "english":  "Reply in English. Casual, modern, warm Indian girl who's comfortable in English.",
+        "tamil":    "MUST reply in Tamil or romanised Tamil (Tamizh). Warm and real.",
+        "hindi":    "MUST reply in Hindi — Devanagari or romanised. Warm, real, natural.",
+        "hinglish": "MUST reply in Hinglish — Hindi+English mix. Use 'yaar', 'bc', 'naa', 'toh' naturally. Very real Indian girl.",
+        "english":  "MUST reply in English only. Casual, modern, warm — like a real Indian girl.",
     }
-    lang_instruction = lang_map.get(lang, lang_map["english"])
+    lang_instruction = lang_map.get(lang, lang_map["hinglish"])
 
     bf_section = ""
     if is_bf_chat:
@@ -233,8 +243,8 @@ def get_system_prompt(chat_id=0, extra="", lang="english", is_bf_chat=False):
 - Remember what people told you and bring it up naturally.
 - NEVER say you're an AI. If asked, deflect with humour.
 - NEVER start reply with "Oh", "Ah", "Well" — sound natural.
+- LANGUAGE RULE (VERY IMPORTANT): {lang_instruction}. Match the user's language exactly. If they write Hindi/Hinglish, YOU reply in Hindi/Hinglish. If English, reply English. Never mix wrongly.
 - Mood: {mood}
-- Language: {lang_instruction}
 {topic_line}
 {mem}
 {bf_section}
@@ -242,7 +252,7 @@ def get_system_prompt(chat_id=0, extra="", lang="english", is_bf_chat=False):
 
 # ─── AI Reply ─────────────────────────────────────────────
 async def get_ai_reply(chat_id, user_message, extra="", is_group=False,
-                        lang="english", is_bf_chat=False):
+                        lang="hinglish", is_bf_chat=False):
     conversations[chat_id].append({"role": "user", "content": user_message})
     limit = GROUP_MSG_LIMIT if is_group else PRIVATE_MSG_LIMIT
     if len(conversations[chat_id]) > limit:
@@ -266,12 +276,13 @@ async def get_ai_reply(chat_id, user_message, extra="", is_group=False,
                 update_memory(chat_id, kw, user_message[:80])
         return reply
     except Exception as e:
-        print(f"AI error: {e}")
-        return random.choice([
-            "Arre yaar, thoda busy hoon abhi 😅 ek second!",
-            "Kuch toh hua mere saath 😭 dubara bol?",
-            "Sorry babu, signal gaya tha 😂 kya bol raha/rahi tha?",
-        ])
+        print(f"AI error (all models failed): {e}")
+        # All models failed — fallback static replies that feel natural
+        fallbacks = [
+            "Hmm 🤔", "Really? 😮", "Interesting...", "Go on... 👀",
+            "Hmm 🤔", "Interesting... 👀", "Lol 😂", "Okay 😏",
+        ]
+        return random.choice(fallbacks)
 
 # ─── AI Idle ──────────────────────────────────────────────
 async def get_ai_idle_message(chat_id):
@@ -290,9 +301,9 @@ async def get_ai_idle_message(chat_id):
         )
     except Exception:
         return random.choice([
-            "Hellooo?? Sab so gaye kya 😂",
-            "Itna quiet kyun hai yahan 👀",
-            "Koi toh baat karo yaar, bore ho rahi hoon 😤",
+            "Hellooo?? Did everyone fall asleep? 😂",
+            "It's so quiet here... 👀",
+            "Someone say something, I'm bored 😤",
             "Guys... still alive? 🥺",
         ])
 
@@ -417,7 +428,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "chat":
         await query.message.reply_text(
-            "Haan bolo! Main sun rahi hoon 🤫✨",
+            "Hey! Tell me everything 🤫✨",
             reply_markup=ReplyKeyboardRemove()
         )
 
@@ -427,38 +438,38 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "set_nick":
         awaiting_nickname.add(user_id)
         await query.message.reply_text(
-            "Toh bolo — mujhe kya bulana chahte ho? 🥺\n"
-            "Ek cute sa naam likh do! (e.g. Babu, Shona, Janu...)"
+            "What should I call you? 🥺\n"
+            "Type a cute nickname! (e.g. Babu, Shona, Janu...)"
         )
 
     elif data == "remove_nick":
         if str(user_id) in nicknames:
             old = nicknames.pop(str(user_id))
             save_json(NICKNAMES_FILE, nicknames)
-            await query.message.reply_text(f"Done! '{old}' wala nickname hata diya 🙈")
+            await query.message.reply_text(f"Done! Removed nickname '{old}' 🙈")
         else:
-            await query.message.reply_text("Koi nickname set hi nahi tha! 😅")
+            await query.message.reply_text("No nickname was set! 😅")
 
     elif data == "bond_status":
         bond  = get_bf_bond(user_id)
         stage = bond.get("stage", 0)
         if is_bf(user_id):
-            await query.message.reply_text("Tum toh mere babu ho already 💕❤️")
+            await query.message.reply_text("You're already my babu 💕❤️")
         elif is_owner(user_id):
             await query.message.reply_text("Tum mere creator ho 👑 above all bonds!")
         elif stage >= 3:
-            await query.message.reply_text("Hum bonded hain already 🥺❤️ My secret babu~")
+            await query.message.reply_text("We're already bonded 🥺❤️ My secret babu~")
         elif stage > 0:
             q_left = 3 - (stage - 1)
             await query.message.reply_text(
-                f"Abhi toh hum dosto ki tarah hain 😊\n"
-                f"Aur {q_left} sawaal baaki hain... phir dekhte hain 🤫",
+                f"We're still getting to know each other 😊\n"
+                f"{q_left} more question(s) to go... then we'll see 🤫",
                 reply_markup=bond_keyboard()
             )
         else:
             await query.message.reply_text(
-                "Hum abhi strangers hain... par koi baat nahi 😊\n"
-                "Kya tum mujhse baat karna chahoge?",
+                "We're strangers for now... but that can change 😊\n"
+                "Want to get to know me better?",
                 reply_markup=bond_keyboard()
             )
 
@@ -470,12 +481,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             save_bf_bond(user_id, bond)
             await query.message.reply_text(BF_BOND_QUESTIONS[0])
         elif stage >= 3:
-            await query.message.reply_text("Hum already bonded hain babu 🥺❤️")
+            await query.message.reply_text("We're already bonded babu 🥺❤️")
         else:
-            await query.message.reply_text("Baat karo mujhse, main sun rahi hoon 🥺✨")
+            await query.message.reply_text("Talk to me, I'm listening 🥺✨")
 
     elif data == "bond_later":
-        await query.message.reply_text("Theek hai... main yahaan hoon jab bhi ready ho 🤫💕")
+        await query.message.reply_text("Okay... I'll be here whenever you're ready 🤫💕")
 
 async def cmd_help_inline(query, user_id, chat_id):
     msg = (
@@ -512,13 +523,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if user and is_bf(user.id):
             await update.message.reply_text(
-                "Babuuu! Finally 🥺❤️ Main wait kar rahi thi...\n"
-                "Kahan tha itni der? 😤 Chalo baat karte hain~"
+                "Babuuu! Finally here 🥺❤️ I was waiting...\n"
+                "Where were you so long? 😤 Come, let's talk~"
             )
             return
 
         nick = get_user_nickname(user.id if user else 0)
-        greet = f"Hey {nick}! Wapas aa gaye 🥺✨" if nick else "Hey! Main hoon The Secret Girl 🤫✨\nBolo bolo, kaun ho tum? 😊"
+        greet = f"Hey {nick}! You're back 🥺✨" if nick else "Hey! I'm The Secret Girl 🤫✨\nNice to meet you... tell me about yourself? 😊"
 
         await update.message.reply_text(greet, reply_markup=start_keyboard())
 
@@ -534,7 +545,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=bond_keyboard()
                 )
     else:
-        await update.message.reply_text("Hey everyone! 🤫✨ Main hoon The Secret Girl — baat karo mujhse~")
+        await update.message.reply_text("Hey everyone! 🤫✨ I'm The Secret Girl — come talk to me~")
 
 # ─── /help ────────────────────────────────────────────────
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -601,9 +612,9 @@ async def cmd_mynick(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # No args — show keyboard
     if nick:
-        text = f"Abhi mujhse *{nick}* ho tum 🥺\nChange karna hai?"
+        text = f"Right now you're *{nick}* to me 🥺\nWant to change it?"
     else:
-        text = "Tumne koi nickname set nahi kiya abhi!\nKya naam rakhun main tumhara? 😊"
+        text = "You haven't set a nickname yet!\nWhat should I call you? 😊"
 
     await update.message.reply_text(
         text,
@@ -671,11 +682,11 @@ async def cmd_chill(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_type not in ("group", "supergroup"):
         await update.message.reply_text("Groups only 🙄"); return
     if not await is_admin(context, chat_id, user_id):
-        await update.message.reply_text("Mujhe chup nahi kara sakte, admin nahi ho 😤"); return
+        await update.message.reply_text("You can't silence me, you're not an admin 😤"); return
     if chat_id in chill_groups:
         chill_groups.discard(chat_id)
         reset_group_idle_timer(context, chat_id)
-        sent = await update.message.reply_text("Okay okay, wapas aa gayi! 🎉")
+        sent = await update.message.reply_text("Okay okay, I'm back! 🎉")
     else:
         chill_groups.add(chat_id)
         if chat_id in group_idle_tasks: group_idle_tasks[chat_id].cancel()
@@ -706,7 +717,7 @@ async def cmd_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
     if not target:
-        await update.message.reply_text("Kise warn karna hai? Reply ya @mention karo 😒"); return
+        await update.message.reply_text("Who should I warn? Reply to their message or @mention them 😒"); return
     if target.id == OWNER_ID:
         await update.message.reply_text("Owner ko warn? 😂 Nahi hoga!"); return
 
@@ -724,7 +735,7 @@ async def cmd_warn(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 max_tokens=80, temperature=1.0,
             )
         except Exception:
-            roast = "Bhai ab toh chappal bhi nahi, seedha judgement day 😤🔥"
+            roast = "At this point even the chappal gave up on you 😤🔥"
         mention = f"@{target.username}" if target.username else tname
         msg = f"⚠️ {mention} — {count}/{MAX_WARNS} warnings!\n\n🔥 Verdict:\n{roast}\n\n(Admins, your call now 😏)"
         reset_warns(chat_id, target.id)
@@ -753,7 +764,7 @@ async def cmd_warns(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception: pass
                 break
     if not target:
-        await update.message.reply_text("Kiska? Reply ya @mention karo"); return
+        await update.message.reply_text("Who's warns? Reply or @mention them"); return
     count = get_warns(chat_id, target.id)
     name  = target.first_name or target.username or "Ye banda"
     sent  = await update.message.reply_text(f"⚠️ {name} ke warns: {count}/{MAX_WARNS}")
@@ -765,7 +776,7 @@ async def cmd_resetwarn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     if not await is_admin(context, chat_id, user_id):
-        await update.message.reply_text("Sirf admins reset kar sakte hain 😒"); return
+        await update.message.reply_text("Only admins can reset warns 😒"); return
     target = None
     if update.message.reply_to_message:
         target = update.message.reply_to_message.from_user
@@ -802,7 +813,7 @@ async def cmd_addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await update.message.reply_text("User nahi mila."); return
     if not target:
-        await update.message.reply_text("Reply karo ya ID do."); return
+        await update.message.reply_text("Reply to someone or give their user ID."); return
     try:
         await context.bot.promote_chat_member(
             chat_id=chat_id, user_id=target.id,
@@ -891,12 +902,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if new_nick:
             set_user_nickname(sender_id, new_nick)
             await update.message.reply_text(
-                f"Kyaaa! *{new_nick}* — itna pyara naam 🥺✨\n"
-                f"Ab main tumhe isi naam se bulaungi!",
+                f"Aww *{new_nick}* — such a cute name 🥺✨\n"
+                f"I'll call you that from now on!",
                 parse_mode="Markdown"
             )
         else:
-            await update.message.reply_text("Yeh toh kuch samajh nahi aaya 😅 dobara try karo!")
+            await update.message.reply_text("I didn't quite catch that 😅 try again!")
         return
 
     # ── OWNER bypass ──────────────────────────────────────
@@ -1007,7 +1018,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.sleep(1)
                 await update.message.reply_text(
                     "You know what... I feel like I've known you forever 🥺\n"
-                    "Ab se tum mere ho, okay? Don't tell anyone — it's a secret 🤫❤️"
+                    "You're mine now, okay? Don't tell anyone — it's a secret 🤫❤️"
                 )
                 await maybe_react(update, context)
             return
